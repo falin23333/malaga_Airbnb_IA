@@ -10,13 +10,49 @@ import app_diagnostics  # noqa: E402
 app_diagnostics.install_diagnostics()
 # --- end diagnostics bootstrap ---
 
-import streamlit as st
+
 import pandas as pd
 
-st.set_page_config(layout="wide")
+import streamlit as st
 
-st.header("Hello world!!!")
-apps = st.slider("Number of apps", max_value=60, value=10)
-chart_data = pd.DataFrame({'y':[2 ** x for x in range(apps)]})
-st.bar_chart(chart_data, height=500, width=min(100+50*apps, 1000), 
-             x_label="Apps", y_label="Fun with data")
+st.set_page_config(
+    page_title="Málaga Airbnb AI",
+    page_icon="🏠",
+    layout="wide"
+)
+
+st.title("🏠 Málaga Airbnb AI Analytics")
+
+st.write(
+    "Plataforma inteligente de análisis de alojamientos "
+    "turísticos en Málaga."
+)
+
+st.divider()
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric("Alojamientos", "9.505")
+
+with col2:
+    st.metric("Precio medio", "213,35 €")
+
+with col3:
+    st.metric("Barrios", "11")
+
+st.subheader("🤖 Asistente de análisis")
+
+pregunta = st.chat_input(
+    "Pregunta algo sobre los alojamientos de Málaga..."
+)
+
+if pregunta:
+    with st.chat_message("user"):
+        st.write(pregunta)
+
+    with st.chat_message("assistant"):
+        st.info(
+            "La conexión con Databricks Genie "
+            "se implementará en el siguiente paso."
+        )
