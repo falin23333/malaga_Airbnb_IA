@@ -217,6 +217,24 @@ if pregunta:
                     )
 
                     mensaje = resultado["message"]
+                    client = WorkspaceClient()
+                    space_id = os.environ["GENIE_SPACE_ID"]
+                    
+                    for adjunto in (mensaje.attachments or []):
+                    
+                        if adjunto.query is None:
+                            continue
+                    
+                        datos = client.genie.get_message_attachment_query_result(
+                            space_id=space_id,
+                            conversation_id=resultado["conversation_id"],
+                            message_id=resultado["message_id"],
+                            attachment_id=adjunto.attachment_id
+                        )
+
+                        # Inspeccionar la estructura devuelta por la API
+                        with st.expander("Datos SQL recibidos"):
+                            st.json(datos.as_dict())
 
                     # Mostrar texto devuelto por Genie
                     hay_texto = False
