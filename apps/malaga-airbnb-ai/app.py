@@ -1,52 +1,92 @@
+    if not filas:
+        return pd.DataFrame()
 
-import os
-import time
-import streamlit as st
-from databricks.sdk import WorkspaceClient
+    if nombres and len(nombres) == len(filas[0]):
+        df = pd.DataFrame(filas, columns=nombres)
+    else:
+        df = pd.DataFrame(filas)
 
-st.set_page_config(
-    page_title="Málaga Airbnb AI",
-    page_icon="🏠",
-    layout="wide"
-)
-def obtener_mensaje_rest(client, space_id, conversation_id, message_id):
-    """Devuelve los adjuntos originales, incluidos sus attachment_id."""
-    ruta = (
-        f"/api/2.0/genie/spaces/{space_id}"
-        f"/conversations/{conversation_id}"
-        f"/messages/{message_id}"
-    )
-    return client.api_client.do("GET", ruta)
+    # La API devuelve valores como cadenas: detectar columnas numericas
+    # solo cuando todas las observaciones no nulas pueden convertirse.
+    for columna in df.columns:
+        convertidos = pd.to_numeric(df[columna], errors="coerce")
+        if df[columna].notna().any() and convertidos.notna().sum() == df[columna].notna().sum():
+            df[columna] = convertidos
+    return df
 
 
-def recuperar_resultado_sql(client, space_id, conversation_id, message_id, attachment_id):
-    """Recupera el resultado SQL del adjunto original de Genie."""
-    ruta = (
-        f"/api/2.0/genie/spaces/{space_id}"
-        f"/conversations/{conversation_id}"
-        f"/messages/{message_id}"
-        f"/attachments/{attachment_id}/query-result"
-    )
-    return client.api_client.do("GET", ruta)
+def mostrar_resultados_sql(resultado):
+    """Recupera el adjunto SQL, muestra tabla y, cuando procede, grafico."""
+    mensaje = resultado["message"] or {}
+    adjuntos = mensaje.get("attachments") or []
+    consultas = [a for a in adjuntos if a.get("query") is not None]
+
+    if not consultas:
+        return
+
+    with st.expander("SQL generado"):
+        for adjunto in consultas:
+            consulta = (adjunto.get("query") or {}).get("query")
+            if consulta:
+                st.code(consulta, language="sql")
+
+    for indice, adjunto in enumerate(consultas, start=1):
+        with st.expander(f"Resultados SQL — consulta {indice}", expanded=True):
+            attachment_id = adjunto.get("attachment_id")
+            try:
+                datos = recuperar_resultado_sql(
+                    resultado["conversation_id"],
+                    resultado["message_id"],
+                    attachment_id,
+                )
+                df = resultado_a_dataframe(datos)
+                if df.empty:
+                    st.info("La consulta no devolvio filas en este resultado.")
+                    with st.expander("Respuesta REST para diagnostico"):
+                        st.json(datos)
+                    continue
+
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                # Grafico sencillo solo para tablas con categoria y valor.
+                numericas = df.select_dtypes(include="number").columns.tolist()
+                categorias = df.select_dtypes(exclude="number").columns.tolist()
+                if numericas and categorias and len(df) <= 100:
+                    eje_x = categorias[0]
+                    eje_y = numericas[0]
+                    fig = px.bar(
+                        df.sort_values(eje_y, ascending=False),
+                        x=eje_x,
+                        y=eje_y,
+                        title=f"{eje_y} por {eje_x}",
+                        labels={eje_x: eje_x, eje_y: eje_y},
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                elif numericas and len(df) == 1:
+                    st.metric(str(numericas[0]), str(df.iloc[0][numericas[0]]))
+            except Exception as exc:
+                st.warning("No se pudieron recuperar o visualizar las filas SQL.")
+                st.code(str(exc))
 
 
-# Interfaz Streamlit
+# ---------- Interfaz ----------
 st.set_page_config(page_title="Málaga Airbnb AI", page_icon="🏠", layout="wide")
 st.title("🏠 Málaga Airbnb AI Analytics")
 st.write("Plataforma inteligente de análisis de alojamientos turísticos en Málaga.")
 st.divider()
 
-# Indicadores estáticos del dataset de septiembre de 2026
-col1, col2, col3 = st.columns(3)
-with col1:
+c1, c2, c3 = st.columns(3)
+with c1:
     st.metric("Alojamientos", "9.505")
-with col2:
-    st.metric("Precio medio", "213,35 €")
-with col3:
+with c2:
+    st.metric("Precio medio anunciado", "213,35 €")
+with c3:
     st.metric("Barrios", "11")
+st.caption("Indicadores fijos del snapshot de septiembre de 2026; no se actualizan aún mediante Genie.")
 
 st.subheader("🤖 Asistente de análisis")
 st.caption("Consultas en lenguaje natural sobre las tablas Gold de Airbnb Málaga.")
+
 pregunta = st.chat_input("Pregunta algo sobre los alojamientos de Málaga...")
 
 if pregunta:
@@ -58,90 +98,31 @@ if pregunta:
             try:
                 resultado = consultar_genie(pregunta)
                 estado = resultado["status"]
+                mensaje = resultado["message"] or {}
 
                 if estado == "COMPLETED":
                     st.success("Genie ha completado la consulta.")
-                    mensaje = resultado["message"]
-                    adjuntos = mensaje.attachments or []
-
-                    # Mostrar las respuestas escritas del agente
-                    textos = [
-                        a.text.content
-                        for a in adjuntos
-                        if getattr(a, "text", None) is not None
-                        and getattr(a.text, "content", None)
-                    ]
-                    for texto in textos:
-                        st.write(texto)
-
-                    # Mostrar SQL si existe
-                    consultas = [a for a in adjuntos if getattr(a, "query", None) is not None]
-                    if consultas:
-                        with st.expander("SQL generado"):
-                            for adjunto in consultas:
-                                sql = getattr(adjunto.query, "query", None)
-                                if sql:
-                                    st.code(sql, language="sql")
-                                else:
-                                    st.info("No hay SQL visible en este adjunto.")
-
-                        # El SDK puede omitir attachment_id: usar la respuesta REST ORIGINAL.
-                        client = WorkspaceClient()
-                        space_id = os.environ["GENIE_SPACE_ID"]
-                        try:
-                            mensaje_rest = obtener_mensaje_rest(
-                                client,
-                                space_id,
-                                resultado["conversation_id"],
-                                resultado["message_id"],
-                            )
-                            adjuntos_sql_rest = [
-                                a for a in mensaje_rest.get("attachments", [])
-                                if a.get("query") is not None
-                            ]
-                        except Exception as error_rest:
-                            st.warning("No se pudieron obtener los adjuntos originales de Genie.")
-                            st.code(str(error_rest))
-                            adjuntos_sql_rest = []
-
-                        for indice, adjunto_rest in enumerate(adjuntos_sql_rest, start=1):
-                            with st.expander(f"Datos SQL recibidos — consulta {indice}"):
-                                attachment_id = adjunto_rest.get("attachment_id")
-                                if not attachment_id:
-                                    st.warning("La respuesta REST no incluye attachment_id para esta consulta.")
-                                    st.json(adjunto_rest)
-                                    continue
-
-                                try:
-                                    datos = recuperar_resultado_sql(
-                                        client=client,
-                                        space_id=space_id,
-                                        conversation_id=resultado["conversation_id"],
-                                        message_id=resultado["message_id"],
-                                        attachment_id=attachment_id,
-                                    )
-                                    st.write("Resultado tabular devuelto por Genie:")
-                                    st.json(datos)
-                                except Exception as error_sql:
-                                    st.warning("No se pudo recuperar el resultado tabular.")
-                                    st.code(str(error_sql))
-                    elif not textos:
-                        st.info("Genie completó el mensaje sin respuesta visible.")
+                    for adjunto in mensaje.get("attachments") or []:
+                        texto = (adjunto.get("text") or {}).get("content")
+                        if texto:
+                            st.markdown(texto)
+                    mostrar_resultados_sql(resultado)
 
                 elif estado == "FAILED":
                     st.error("Genie ha fallado al procesar la consulta.")
-                    st.write("**Tipo de error:**", resultado["error_type"])
-                    st.write("**Detalle del error:**", resultado["error_detail"])
+                    error = mensaje.get("error") or {}
+                    st.write("**Tipo:**", error.get("type", "Desconocido"))
+                    st.write("**Detalle:**", error.get("error", "Sin detalle"))
                 elif estado == "CANCELLED":
-                    st.warning("La consulta se ha cancelado.")
-                elif estado == "TIMEOUT":
-                    st.warning("Genie no ha terminado durante el período de comprobación.")
+                    st.warning("Genie ha cancelado la consulta.")
+                else:
+                    st.warning("Genie no ha finalizado durante esta prueba.")
 
                 with st.expander("Detalles técnicos"):
                     st.write("Estado:", estado)
                     st.write("Conversación:", resultado["conversation_id"])
                     st.write("Mensaje:", resultado["message_id"])
 
-            except Exception as error:
+            except Exception as exc:
                 st.error("Error de comunicación con Databricks.")
-                st.code(str(error))
+                st.code(str(exc))
