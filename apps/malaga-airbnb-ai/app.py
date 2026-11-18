@@ -1,3 +1,14 @@
+
+import os
+import time
+import streamlit as st
+from databricks.sdk import WorkspaceClient
+
+st.set_page_config(
+    page_title="Málaga Airbnb AI",
+    page_icon="🏠",
+    layout="wide"
+)
 def obtener_mensaje_rest(client, space_id, conversation_id, message_id):
     """Devuelve los adjuntos originales, incluidos sus attachment_id."""
     ruta = (
