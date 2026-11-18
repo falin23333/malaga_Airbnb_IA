@@ -212,6 +212,9 @@ if pregunta:
                             ):
 
                                 try:
+                                    # Diagnóstico: inspeccionar el adjunto de Genie
+                                    st.write("Estructura del adjunto SQL:")
+                                    st.json(adjunto.as_dict())
                                     datos = recuperar_resultado_sql(
                                         client=client,
                                         space_id=space_id,
@@ -221,7 +224,12 @@ if pregunta:
                                         message_id=resultado[
                                             "message_id"
                                         ],
-                                        attachment_id=adjunto.attachment_id,
+                                        
+                                        attachment_id=(
+                                            getattr(adjunto, "attachment_id", None)
+                                            or getattr(adjunto.query, "id", None)
+                                        ),
+
                                     )
 
                                     st.json(datos)
