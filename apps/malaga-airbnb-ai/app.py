@@ -212,9 +212,25 @@ if pregunta:
                             ):
 
                                 try:
-                                    # Diagnóstico: inspeccionar el adjunto de Genie
-                                    st.write("Estructura del adjunto SQL:")
-                                    st.json(adjunto.as_dict())
+                                    
+                                    # Consultar el mensaje original mediante REST
+                                    ruta_mensaje = (
+                                        f"/api/2.0/genie/spaces/{space_id}"
+                                        f"/conversations/{resultado['conversation_id']}"
+                                        f"/messages/{resultado['message_id']}"
+                                    )
+                                    
+                                    mensaje_original = client.api_client.do(
+                                        "GET",
+                                        ruta_mensaje
+                                    )
+                                    
+                                    st.write("Adjuntos originales de Genie:")
+                                    st.json(mensaje_original.get("attachments", []))
+                                    
+                                    st.write("Metadatos del resultado SQL:")
+                                    st.json(mensaje_original.get("query_result", {}))
+
                                     datos = recuperar_resultado_sql(
                                         client=client,
                                         space_id=space_id,
