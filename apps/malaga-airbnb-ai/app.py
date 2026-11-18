@@ -1,4 +1,36 @@
-        return (
+# ============================================================
+# MALAGA AIRBNB AI ANALYTICS
+# Streamlit + Databricks Genie + pandas + Plotly
+# ============================================================
+
+# Diagnosticos originales de la plantilla Databricks
+import os as _diag_os
+import sys as _diag_sys
+
+_diag_dir = _diag_os.path.dirname(_diag_os.path.abspath(__file__))
+if _diag_dir not in _diag_sys.path:
+    _diag_sys.path.insert(0, _diag_dir)
+import app_diagnostics
+app_diagnostics.install_diagnostics()
+
+# Imports de la aplicacion
+import os
+import time
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+from databricks.sdk import WorkspaceClient
+
+
+# ---------- Configuracion de Genie ----------
+@st.cache_resource
+def obtener_cliente():
+    # Autenticacion con la identidad de Databricks Apps; sin tokens en GitHub.
+    return WorkspaceClient()
+
+
+def ruta_mensaje(space_id, conversation_id, message_id):
+    return (
         f"/api/2.0/genie/spaces/{space_id}"
         f"/conversations/{conversation_id}"
         f"/messages/{message_id}"
@@ -37,8 +69,6 @@ def consultar_genie(pregunta):
         "conversation_id": conversation_id,
         "message_id": message_id,
     }
-
-
 def recuperar_resultado_sql(conversation_id, message_id, attachment_id):
     """Usa el ID real que viene en el JSON REST del mensaje."""
     if not attachment_id:
@@ -129,8 +159,6 @@ def mostrar_resultados_sql(resultado):
             except Exception as exc:
                 st.warning("No se pudieron recuperar o visualizar las filas SQL.")
                 st.code(str(exc))
-
-
 # ---------- Interfaz ----------
 st.set_page_config(page_title="Málaga Airbnb AI", page_icon="🏠", layout="wide")
 st.title("🏠 Málaga Airbnb AI Analytics")
@@ -150,6 +178,7 @@ st.subheader("🤖 Asistente de análisis")
 st.caption("Consultas en lenguaje natural sobre las tablas Gold de Airbnb Málaga.")
 
 pregunta = st.chat_input("Pregunta algo sobre los alojamientos de Málaga...")
+
 if pregunta:
     with st.chat_message("user"):
         st.write(pregunta)
@@ -187,4 +216,3 @@ if pregunta:
             except Exception as exc:
                 st.error("Error de comunicación con Databricks.")
                 st.code(str(exc))
-
