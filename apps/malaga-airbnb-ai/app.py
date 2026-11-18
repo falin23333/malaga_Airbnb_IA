@@ -1,3 +1,67 @@
+        return (
+        f"/api/2.0/genie/spaces/{space_id}"
+        f"/conversations/{conversation_id}"
+        f"/messages/{message_id}"
+    )
+
+
+def consultar_genie(pregunta):
+    """Inicia una conversacion y devuelve el mensaje REST completo."""
+    client = obtener_cliente()
+    space_id = os.environ["GENIE_SPACE_ID"]
+
+    inicio = client.api_client.do(
+        "POST",
+        f"/api/2.0/genie/spaces/{space_id}/start-conversation",
+        body={"content": pregunta},
+    )
+    conversation_id = inicio["conversation_id"]
+    message_id = inicio["message_id"]
+    ruta = ruta_mensaje(space_id, conversation_id, message_id)
+
+    for _ in range(30):
+        mensaje = client.api_client.do("GET", ruta)
+        estado = str(mensaje.get("status", "")).split(".")[-1]
+        if estado in ("COMPLETED", "FAILED", "CANCELLED"):
+            return {
+                "status": estado,
+                "message": mensaje,
+                "conversation_id": conversation_id,
+                "message_id": message_id,
+            }
+        time.sleep(2)
+
+    return {
+        "status": "TIMEOUT",
+        "message": None,
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+    }
+
+
+def recuperar_resultado_sql(conversation_id, message_id, attachment_id):
+    """Usa el ID real que viene en el JSON REST del mensaje."""
+    if not attachment_id:
+        raise ValueError("El adjunto SQL no incluye attachment_id")
+    space_id = os.environ["GENIE_SPACE_ID"]
+    ruta = (
+        f"{ruta_mensaje(space_id, conversation_id, message_id)}"
+        f"/attachments/{attachment_id}/query-result"
+    )
+    return obtener_cliente().api_client.do("GET", ruta)
+
+
+def resultado_a_dataframe(datos):
+    """Extrae las filas y columnas del resultado de Genie, si estan disponibles."""
+    # La respuesta documentada incorpora statement_response.
+    respuesta = datos.get("statement_response", datos)
+    resultado = respuesta.get("result") or {}
+    manifest = respuesta.get("manifest") or {}
+    esquema = manifest.get("schema") or {}
+    columnas_meta = esquema.get("columns") or []
+    nombres = [c.get("name", f"col_{i+1}") for i, c in enumerate(columnas_meta)]
+    filas = resultado.get("data_array") or []
+
     if not filas:
         return pd.DataFrame()
 
@@ -13,8 +77,6 @@
         if df[columna].notna().any() and convertidos.notna().sum() == df[columna].notna().sum():
             df[columna] = convertidos
     return df
-
-
 def mostrar_resultados_sql(resultado):
     """Recupera el adjunto SQL, muestra tabla y, cuando procede, grafico."""
     mensaje = resultado["message"] or {}
@@ -88,7 +150,6 @@ st.subheader("🤖 Asistente de análisis")
 st.caption("Consultas en lenguaje natural sobre las tablas Gold de Airbnb Málaga.")
 
 pregunta = st.chat_input("Pregunta algo sobre los alojamientos de Málaga...")
-
 if pregunta:
     with st.chat_message("user"):
         st.write(pregunta)
@@ -126,3 +187,4 @@ if pregunta:
             except Exception as exc:
                 st.error("Error de comunicación con Databricks.")
                 st.code(str(exc))
+
