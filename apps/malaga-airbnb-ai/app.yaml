@@ -1,5 +1,9 @@
-command: [
-  "streamlit", 
-  "run",
-  "app.py"
-]
+
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  - name: GENIE_SPACE_ID
+    valueFrom: genie-space
